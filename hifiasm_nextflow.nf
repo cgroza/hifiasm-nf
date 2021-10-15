@@ -10,9 +10,9 @@ design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
 
 yac_fastq_ch = design.mat.concat(design.pat)
 
-process yac_kmers {
+process yak_kmers {
     cpus 16
-    memory '16GB'
+    memory '40GB'
     time '12h'
 
     input:
