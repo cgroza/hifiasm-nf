@@ -11,7 +11,7 @@ design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
 yac_fastq_ch = design.mat.concat(design.pat)
 
 process yak_kmers {
-    cpus 16
+    cpus 40
     memory '170GB'
     time '12h'
 
@@ -23,7 +23,7 @@ process yak_kmers {
 
     script:
     """
-    yak count -b37 -t16 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
+    yak count -b37 -t40 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
     """
 }
 
