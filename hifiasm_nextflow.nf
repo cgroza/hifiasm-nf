@@ -12,7 +12,7 @@ yac_fastq_ch = design.mat.concat(design.pat)
 
 process yak_kmers {
     cpus 16
-    memory '40GB'
+    memory '170GB'
     time '12h'
 
     input:
@@ -32,7 +32,7 @@ hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
 
 process hifiasm_denovo {
     cpus 40
-    memory '160GB'
+    memory '170GB'
     time '48h'
 
     publishDir 'assemblies'
