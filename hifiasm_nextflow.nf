@@ -46,6 +46,6 @@ process hifiasm_denovo {
     script:
     """
     mkdir ${sample}_asm
-    hifiasm -o ${sample}_asm/${sample}.asm -t40 -1 ${yak1} -2 {yak2} ${hifi_fasta}
+    hifiasm -o ${sample}_asm/${sample}.asm -t40 -1 ${yak1} -2 ${yak2} ${hifi_fasta}
     """
 }
