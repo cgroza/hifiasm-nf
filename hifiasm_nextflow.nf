@@ -1,4 +1,5 @@
 params.design = 'design.csv'
+params.ref = 'genome.fa.gz'
 
 
 design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
@@ -7,6 +8,8 @@ design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
     pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
     hifi: [row.sample, file(row.hifi)]
 }
+
+ref_ch = Channel.fromPath(params.ref)
 
 yac_fastq_ch = design.mat.concat(design.pat)
 
@@ -41,11 +44,36 @@ process hifiasm_denovo {
     set val(sample), file(hifi_fasta), file(yak1), file(yak2) from hifiasm_ch
 
     output:
-    file("${sample}_asm") into hifiasm_denovo_ch
+    set val(sample), file("${sample}_diploid") into hifiasm_denovo_ch
 
     script:
     """
     mkdir ${sample}_asm
     hifiasm -o ${sample}_asm/${sample}.asm -t40 -1 ${yak1} -2 ${yak2} ${hifi_fasta}
+
+    mkdir ${sample}_diploid
+    awk '/^S/{print ">"$2;print $3}' ${sample}_asm/${sample}.asm.dip.hap1.p_ctg.gfa | gzip > ${sample}_diploid/${sample}_hap1.fa.gz
+    awk '/^S/{print ">"$2;print $3}' ${sample}_asm/${sample}.asm.dip.hap2.p_ctg.gfa | gzip > ${sample}_diploid/${sample}_hap2.fa.gz
+
+    rm -r ${sample}_asm
+    """
+}
+
+process dipcall_variants {
+    cpus 2
+    memory '20GB'
+    time '6h'
+    publishDir 'variants'
+
+    input:
+    set val(sample), file(asm), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
+
+    output:
+    set val(sample), file("${sample}.dip.vcf.gz")
+
+    script:
+    """
+    ~/dipcall/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
+    make -j2 ${sample}.mak
     """
 }
