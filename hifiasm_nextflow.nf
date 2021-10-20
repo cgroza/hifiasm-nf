@@ -36,7 +36,7 @@ hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
 process hifiasm_denovo {
     cpus 40
     memory '170GB'
-    time '48h'
+    time '24h'
 
     publishDir 'assemblies'
 
