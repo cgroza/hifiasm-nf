@@ -48,12 +48,15 @@ process hifiasm_denovo {
 
     script:
     """
+    module load samtools
     mkdir ${sample}_asm
     hifiasm -o ${sample}_asm/${sample}.asm -t40 -1 ${yak1} -2 ${yak2} ${hifi_fasta}
 
     mkdir ${sample}_diploid
     awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap1.p_ctg.gfa | gzip > ${sample}_diploid/${sample}_hap1.fa.gz
     awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap2.p_ctg.gfa | gzip > ${sample}_diploid/${sample}_hap2.fa.gz
+    samtools faidx ${sample}_diploid/${sample}_hap1.fa.gz
+    samtools faidx ${sample}_diploid/${sample}_hap2.fa.gz
 
     rm -r ${sample}_asm
     """
