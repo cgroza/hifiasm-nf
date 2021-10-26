@@ -81,7 +81,7 @@ process dipcall_variants {
 
     samtools faidx ${ref}
 
-    ~/dipcall/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
+    ~/dipcall.kit/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
     make -j2 ${sample}.mak
     """
 }
