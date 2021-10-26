@@ -65,7 +65,7 @@ process hifiasm_denovo {
 
 process dipcall_variants {
     cpus 2
-    memory '20GB'
+    memory '71GB'
     time '6h'
     publishDir 'variants'
 
