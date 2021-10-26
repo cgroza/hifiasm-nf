@@ -77,6 +77,10 @@ process dipcall_variants {
 
     script:
     """
+    module load samtools
+
+    samtools faidx ${ref}
+
     ~/dipcall/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
     make -j2 ${sample}.mak
     """
