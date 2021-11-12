@@ -4,7 +4,7 @@ params.hifi_parents = true
 
 ref_ch = Channel.fromPath(params.ref)
 
-if(params.hifi_parents) {
+if(!params.hifi_parents) {
     design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
         row ->
         mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
