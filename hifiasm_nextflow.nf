@@ -1,19 +1,28 @@
 params.design = 'design.csv'
 params.ref = 'genome.fa.gz'
-
-
-design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
-    row ->
-    mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
-    pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
-    hifi: [row.sample, file(row.hifi)]
-}
+params.hifi_parents = true
 
 ref_ch = Channel.fromPath(params.ref)
 
+if(params.hifi_parents) {
+    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
+        row ->
+        mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
+        pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
+        hifi: [row.sample, file(row.hifi)]
+    }
+} else {
+    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
+        row ->
+        mat: [row.sample, "maternal", file(row.maternal)]
+        pat: [row.sample, "paternal", file(row.paternal)]
+        hifi: [row.sample, file(row.hifi)]
+    }
+
+}
 yac_fastq_ch = design.mat.concat(design.pat)
 
-process yak_kmers {
+process yak_kmers_paired {
     cpus 40
     memory '170GB'
     time '12h'
@@ -27,6 +36,23 @@ process yak_kmers {
     script:
     """
     yak count -b37 -t40 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
+    """
+}
+
+process yak_kmers_single {
+    cpus 40
+    memory '170GB'
+    time '12h'
+
+    input:
+    set val(sample), val(parent), file(fastq) from yac_fastq_ch
+
+    output:
+    set val(sample), file("${parent}.yak") into yac_kmers_ch
+
+    script:
+    """
+    yak count -b37 -t40 -o ${parent}.yak ${fastq}
     """
 }
 
