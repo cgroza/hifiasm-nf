@@ -20,41 +20,45 @@ if(!params.hifi_parents) {
     }
 
 }
+
 yac_fastq_ch = design.mat.concat(design.pat)
 
-process yak_kmers_paired {
-    cpus 40
-    memory '170GB'
-    time '12h'
+if(params.hifi_parents) {
+    process yak_kmers_single {
+        cpus 40
+        memory '170GB'
+        time '12h'
 
-    input:
-    set val(sample), val(parent), file(fastq_1), file(fastq_2) from yac_fastq_ch
+        input:
+        set val(sample), val(parent), file(fastq) from yac_fastq_ch
 
-    output:
-    set val(sample), file("${parent}.yak") into yac_kmers_ch
+        output:
+        set val(sample), file("${parent}.yak") into yac_kmers_ch
 
-    script:
-    """
-    yak count -b37 -t40 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
-    """
+        script:
+        """
+        yak count -b37 -t40 -o ${parent}.yak ${fastq}
+        """
+    }
+} else {
+    process yak_kmers_paired {
+        cpus 40
+        memory '170GB'
+        time '12h'
+
+        input:
+        set val(sample), val(parent), file(fastq_1), file(fastq_2) from yac_fastq_ch
+
+        output:
+        set val(sample), file("${parent}.yak") into yac_kmers_ch
+
+        script:
+        """
+        yak count -b37 -t40 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
+        """
+    }
 }
 
-process yak_kmers_single {
-    cpus 40
-    memory '170GB'
-    time '12h'
-
-    input:
-    set val(sample), val(parent), file(fastq) from yac_fastq_ch
-
-    output:
-    set val(sample), file("${parent}.yak") into yac_kmers_ch
-
-    script:
-    """
-    yak count -b37 -t40 -o ${parent}.yak ${fastq}
-    """
-}
 
 hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
     it -> [it[0], it[1][0], it[1][1]]}, by: 0).view()
