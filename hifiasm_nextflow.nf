@@ -1,24 +1,24 @@
 params.design = 'design.csv'
 params.ref = 'genome.fa.gz'
 params.hifi_parents = true
+params.dipcall = true
 
 ref_ch = Channel.fromPath(params.ref)
 
-if(!params.hifi_parents) {
-    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
-        row ->
-        mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
-        pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
-        hifi: [row.sample, file(row.hifi)]
-    }
-} else {
-    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap{
+if(params.hifi_parents) {
+    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
         row ->
         mat: [row.sample, "maternal", file(row.maternal)]
         pat: [row.sample, "paternal", file(row.paternal)]
         hifi: [row.sample, file(row.hifi)]
     }
-
+} else {
+    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+        row ->
+        mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
+        pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
+        hifi: [row.sample, file(row.hifi)]
+    }
 }
 
 yac_fastq_ch = design.mat.concat(design.pat)
@@ -93,25 +93,59 @@ process hifiasm_denovo {
     """
 }
 
-process dipcall_variants {
-    cpus 40
-    memory '160GB'
-    time '24h'
-    publishDir 'variants'
+if(params.dipcall) {
+    process dipcall_variants {
+        cpus 40
+        memory '160GB'
+        time '24h'
+        publishDir 'variants'
 
-    input:
-    set val(sample), file(asm), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
+        input:
+        set val(sample), file(asm), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
 
-    output:
-    set val(sample), file("${sample}.dip.vcf.gz")
+        output:
+        set val(sample), file("${sample}.dip.vcf.gz")
 
-    script:
-    """
-    module load samtools
+        script:
+        """
+        module load samtools
 
-    samtools faidx ${ref}
+        samtools faidx ${ref}
 
-    ~/dipcall.kit/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
-    make -j2 -f ${sample}.mak
-    """
+        ~/dipcall.kit/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
+        make -j2 -f ${sample}.mak
+        """
+    }
+} else{
+    process svim_asm_variants {
+        cpus 40
+        memory '160GB'
+        time '24h'
+        publishDir 'variants'
+
+        input:
+        set val(sample), file(asm), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
+
+        output:
+        set val(sample), file("${sample}.dip.vcf.gz")
+
+        script:
+        """
+        module load samtools
+        module load bcftools
+
+        samtools faidx ${ref}
+
+        mkdir ${sample}
+        minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${asm}/${sample}_hap1.fa.gz | samtools sort -m4G -@4 -o hap1.sorted.bam -
+        minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${asm}/${sample}_hap2.fa.gz | samtools sort -m4G -@4 -o hap2.sorted.bam -
+
+        samtools index hap1.sorted.bam
+        samtools index hap2.sorted.bam
+        svim-asm diploid --sample ${sample} ${sample}/ hap1.sorted.bam hap2.sorted.bam ${ref}
+        mv ${sample}/variants.vcf ${sample}.dip.vcf
+        bgzip ${sample}.dip.vcf
+        """
+    }
+
 }
