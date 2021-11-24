@@ -145,7 +145,7 @@ if(params.dipcall) {
         samtools index hap2.sorted.bam
 
         mkdir snvs
-        (seq 1 22; echo X) | parallel -j4 'python3 ${projectDir}/parse_snvs.py --min_quality 40 --reference ${ref} --hap1 hap1.sorted.bam --hap2 hap2.sorted.bam --region chr{} --vcf_out snvs/chr{}.vcf.gz --vcf_template ${projectDir}/header.vcf.gz --sample ${sample}'
+        (seq 1 22; echo X) | parallel -j24 'python3 ${projectDir}/parse_snvs.py --min_quality 40 --reference ${ref} --hap1 hap1.sorted.bam --hap2 hap2.sorted.bam --region chr{} --vcf_out snvs/chr{}.vcf.gz --vcf_template ${projectDir}/header.vcf.gz --sample ${sample}'
         bcftools concat snvs/*.vcf.gz -Oz -o ${sample}.snvs.dip.vcf.gz
 
         svim-asm diploid --min_sv_size 1 --types DEL,INS --sample ${sample} ${sample}/ hap1.sorted.bam hap2.sorted.bam ${ref}
