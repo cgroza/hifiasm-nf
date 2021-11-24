@@ -133,6 +133,7 @@ if(params.dipcall) {
         """
         module load samtools
         module load bcftools
+        module load python/3.9.6
 
         samtools faidx ${ref}
 
