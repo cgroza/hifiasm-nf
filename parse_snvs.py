@@ -15,9 +15,13 @@ revcomp = {'c' : "G", 'C' : 'C',
            't' : "A", 'T' : 'T'}
 
 def cleanup_pileup(pileup):
-    cleaned =  ''.join(set(revcomp[c] for c in junk_re.sub("",
+    try:
+        cleaned =  ''.join(set(revcomp[c] for c in junk_re.sub("",
                                                    carret_re.sub("",
                                                                  indel_re.sub("", pileup)))))
+    except Exception as e:
+        print(pileup, file = sys.stderr)
+        raise e
     # ambiguous sites with multiple contigs mapping to this locus, or reference sites
     if len(cleaned) > 1 or len(cleaned) == 0:
         return None
