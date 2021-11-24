@@ -20,8 +20,8 @@ def cleanup_pileup(pileup):
                                                    carret_re.sub("",
                                                                  indel_re.sub("", pileup)))))
     except Exception as e:
-        print(pileup, file = sys.stderr)
-        raise e
+        print("Skipping irregular input:", pileup, file = sys.stderr)
+        return None
     # ambiguous sites with multiple contigs mapping to this locus, or reference sites
     if len(cleaned) > 1 or len(cleaned) == 0:
         return None
