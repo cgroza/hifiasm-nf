@@ -103,3 +103,4 @@ while True:
         print("[parse_snvs.py] :: parsing {chrom}:{start}:{end}".format(chrom = chrom1, start=pos1, end = pos1 + 1e6), file = sys.stderr)
     i = i + 1
 
+writer.close()
