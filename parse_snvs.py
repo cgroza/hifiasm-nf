@@ -9,18 +9,13 @@ indel_re = re.compile(r"(\+|\-)[0-9]+[ACGTNacgtn]+")
 carret_re = re.compile(r"\^.")
 junk_re = re.compile(r"[.,<>*$]")
 
-revcomp = {'c' : "G", 'C' : 'C',
-           'a' : "T", 'A' : 'A',
-           'g' : "C", 'G' : 'G',
-           't' : "A", 'T' : 'T'}
-
 def cleanup_pileup(pileup):
     try:
-        cleaned =  ''.join(set(revcomp[c] for c in junk_re.sub("",
+        cleaned =  ''.join(set(c.upper() for c in junk_re.sub("",
                                                    carret_re.sub("",
                                                                  indel_re.sub("", pileup)))))
     except Exception as e:
-        print("[parse_vcf.py] :: Skipping irregular input:", pileup, file = sys.stderr)
+        print("[parse_vcf.py] :: skipping irregular input:", pileup, file = sys.stderr)
         return None
     # ambiguous sites with multiple contigs mapping to this locus, or reference sites
     if len(cleaned) > 1 or len(cleaned) == 0:
