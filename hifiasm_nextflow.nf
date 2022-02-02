@@ -142,14 +142,13 @@ if(params.dipcall) {
         module load bcftools
         module load python/3.9.6
 
-        samtools faidx ${ref}
+        parallel -j3 'samtools faidx {}' ::: ${ref} ${hap1} ${hap2}
 
         mkdir ${sample}
         minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${hap1} | samtools sort -m4G -@4 -o hap1.sorted.bam -
         minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${hap2} | samtools sort -m4G -@4 -o hap2.sorted.bam -
 
-        samtools index hap1.sorted.bam
-        samtools index hap2.sorted.bam
+        parallel -j2 'samtools index {}' ::: hap1.sorted.bam hap2.sorted.bam
 
         mkdir snvs
         (seq 1 22; echo X) | parallel -j24 'python3 ${projectDir}/parse_snvs.py --min_quality 40 --reference ${ref} --hap1 hap1.sorted.bam --hap2 hap2.sorted.bam --region chr{} --vcf_out snvs/chr{}.vcf.gz --vcf_template ${projectDir}/header.vcf.gz --sample ${sample}'
