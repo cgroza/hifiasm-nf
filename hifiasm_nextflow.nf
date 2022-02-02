@@ -1,97 +1,104 @@
 params.design = 'design.csv'
 params.ref = 'genome.fa.gz'
 params.hifi_parents = true
+params.preassembled = true
+params.assemblies = "asm.csv"
 params.dipcall = true
 
 ref_ch = Channel.fromPath(params.ref)
 
-if(params.hifi_parents) {
-    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
-        row ->
-        mat: [row.sample, "maternal", file(row.maternal)]
-        pat: [row.sample, "paternal", file(row.paternal)]
-        hifi: [row.sample, file(row.hifi)]
+if(!params.preassembled) {
+    if(params.hifi_parents) {
+        design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+            row ->
+            mat: [row.sample, "maternal", file(row.maternal)]
+            pat: [row.sample, "paternal", file(row.paternal)]
+            hifi: [row.sample, file(row.hifi)]
+        }
+    } else {
+        design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+            row ->
+            mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
+            pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
+            hifi: [row.sample, file(row.hifi)]
+        }
     }
-} else {
-    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
-        row ->
-        mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
-        pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
-        hifi: [row.sample, file(row.hifi)]
+
+    yac_fastq_ch = design.mat.concat(design.pat)
+
+    if(params.hifi_parents) {
+        process yak_kmers_single {
+            cpus 40
+            memory '170GB'
+            time '12h'
+
+            input:
+            set val(sample), val(parent), file(fastq) from yac_fastq_ch
+
+            output:
+            set val(sample), file("${parent}.yak") into yac_kmers_ch
+
+            script:
+            """
+            yak count -b37 -t40 -o ${parent}.yak ${fastq}
+            """
+        }
+    } else {
+        process yak_kmers_paired {
+            cpus 40
+            memory '170GB'
+            time '12h'
+
+            input:
+            set val(sample), val(parent), file(fastq_1), file(fastq_2) from yac_fastq_ch
+
+            output:
+            set val(sample), file("${parent}.yak") into yac_kmers_ch
+
+            script:
+            """
+            yak count -b37 -t40 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
+            """
+        }
     }
-}
 
-yac_fastq_ch = design.mat.concat(design.pat)
 
-if(params.hifi_parents) {
-    process yak_kmers_single {
+    hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
+        it -> [it[0], it[1][0], it[1][1]]}, by: 0).view()
+
+    process hifiasm_denovo {
         cpus 40
         memory '170GB'
-        time '12h'
+        time '24h'
+
+        publishDir 'assemblies'
 
         input:
-        set val(sample), val(parent), file(fastq) from yac_fastq_ch
+        set val(sample), file(hifi_fasta), file(yak1), file(yak2) from hifiasm_ch
 
         output:
-        set val(sample), file("${parent}.yak") into yac_kmers_ch
+        set val(sample), file("${sample}_diploid/${sample}_hap1.fa.gz"), file("${sample}_diploid/${sample}_hap2.fa.gz") into hifiasm_denovo_ch
 
         script:
         """
-        yak count -b37 -t40 -o ${parent}.yak ${fastq}
+        module load samtools
+        module load bcftools
+        mkdir ${sample}_asm
+        hifiasm -o ${sample}_asm/${sample}.asm -t40 -1 ${yak1} -2 ${yak2} ${hifi_fasta}
+
+        mkdir ${sample}_diploid
+        awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap1.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap1.fa.gz
+        awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap2.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap2.fa.gz
+
+        rm -r ${sample}_asm
         """
     }
 } else {
-    process yak_kmers_paired {
-        cpus 40
-        memory '170GB'
-        time '12h'
-
-        input:
-        set val(sample), val(parent), file(fastq_1), file(fastq_2) from yac_fastq_ch
-
-        output:
-        set val(sample), file("${parent}.yak") into yac_kmers_ch
-
-        script:
-        """
-        yak count -b37 -t40 -o ${parent}.yak <(cat ${fastq_1} ${fastq_2}) <(cat ${fastq_1} ${fastq_2})
-        """
+    hifiasm_denovo_ch = Channel.fromPath(params.assemblies).splitCsv(header : true).map {
+        row -> [row.sample, file(row.hap1), file(row.hap2)]
     }
 }
 
-
-hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
-    it -> [it[0], it[1][0], it[1][1]]}, by: 0).view()
-
-process hifiasm_denovo {
-    cpus 40
-    memory '170GB'
-    time '24h'
-
-    publishDir 'assemblies'
-
-    input:
-    set val(sample), file(hifi_fasta), file(yak1), file(yak2) from hifiasm_ch
-
-    output:
-    set val(sample), file("${sample}_diploid") into hifiasm_denovo_ch
-
-    script:
-    """
-    module load samtools
-    module load bcftools
-    mkdir ${sample}_asm
-    hifiasm -o ${sample}_asm/${sample}.asm -t40 -1 ${yak1} -2 ${yak2} ${hifi_fasta}
-
-    mkdir ${sample}_diploid
-    awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap1.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap1.fa.gz
-    awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap2.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap2.fa.gz
-    samtools faidx ${sample}_diploid/${sample}_hap1.fa.gz
-    samtools faidx ${sample}_diploid/${sample}_hap2.fa.gz
-
-    rm -r ${sample}_asm
-    """
-}
 
 if(params.dipcall) {
     process dipcall_variants {
@@ -101,7 +108,7 @@ if(params.dipcall) {
         publishDir 'variants'
 
         input:
-        set val(sample), file(asm), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
+        set val(sample), file(hap1), file(hap2), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
 
         output:
         set val(sample), file("${sample}.dip.vcf.gz")
@@ -124,7 +131,7 @@ if(params.dipcall) {
         publishDir 'variants'
 
         input:
-        set val(sample), file(asm), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
+        set val(sample), file(hap1), file(hap2), file(ref) from hifiasm_denovo_ch.combine(ref_ch)
 
         output:
         set val(sample), file("${sample}.dip.vcf.gz"), file("${sample}.snvs.dip.vcf.gz")
@@ -138,8 +145,8 @@ if(params.dipcall) {
         samtools faidx ${ref}
 
         mkdir ${sample}
-        minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${asm}/${sample}_hap1.fa.gz | samtools sort -m4G -@4 -o hap1.sorted.bam -
-        minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${asm}/${sample}_hap2.fa.gz | samtools sort -m4G -@4 -o hap2.sorted.bam -
+        minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${hap1} | samtools sort -m4G -@4 -o hap1.sorted.bam -
+        minimap2 -a -x asm5 --cs -r2k -t 40 ${ref} ${hap2} | samtools sort -m4G -@4 -o hap2.sorted.bam -
 
         samtools index hap1.sorted.bam
         samtools index hap2.sorted.bam
