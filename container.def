@@ -1,0 +1,67 @@
+Bootstrap: library
+From: ubuntu:22.04
+
+%post
+    TZ=Etc/UTC && \
+        ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
+        echo $TZ > /etc/timezone
+
+    apt-get -qq -y update
+
+    apt-get -qq install --assume-yes software-properties-common
+    add-apt-repository universe
+    apt-get -qq update
+    apt-get -qq install --assume-yes pigz python3-pip git build-essential liblzma-dev libbz2-dev zlib1g-dev libjellyfish-2.0-dev pkg-config cmake gawk parallel autoconf
+
+    pip3 install svim-asm
+
+    git clone --recursive https://github.com/samtools/htslib.git
+    cd htslib
+    autoreconf -i
+    ./configure
+    make
+    make install
+    cd ${HOME}
+
+    git clone https://github.com/samtools/samtools.git
+    cd samtools
+    autoheader
+    autoconf -Wno-syntax
+    ./configure --without-curses
+    make
+    make install
+    cd ${HOME}
+    rm -rf samtools
+
+    cd ${HOME}
+    rm -rf htslib
+    rm -rf bcftools
+
+    git clone https://github.com/lh3/minimap2
+    cd minimap2
+    make
+    cp minimap2 /usr/local/bin
+    cd $HOME
+    rm -rf minimap2
+
+    git clone https://github.com/lh3/dipcall.git
+
+    git clone https://github.com/lh3/yak
+    cd yak && make && cp yak /usr/local/bin
+    cd $HOME
+    rm -rf yak
+
+    git clone https://github.com/chhylp123/hifiasm
+    cd hifiasm && make && cp hifiasm /usr/local/bin
+    cd $HOME
+    rm -rf hifiasm
+
+    apt-get -qq remove --assume-yes git software-properties-common cmake pkg-config build-essential autoconf
+    apt-get -qq autoremove --assume-yes
+    apt-get -qq clean --assume-yes
+
+%environment
+    export LC_ALL=C
+    export LANG=C
+    export PYTHONIOENCODING=utf8
+    export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

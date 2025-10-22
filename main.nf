@@ -58,8 +58,6 @@ process hifiasm_trio_denovo {
 
   script:
   """
-  module load samtools
-  module load bcftools
   mkdir ${sample}_asm
   hifiasm -o ${sample}_asm/${sample}.asm -t${params.cpus} -1 ${yak1} -2 ${yak2} ${hifi_fasta}
 
@@ -86,8 +84,6 @@ process hifiasm_hifi_denovo {
 
   script:
   """
-  module load samtools
-  module load bcftools
   mkdir ${sample}_asm
   hifiasm -o ${sample}_asm/${sample}.asm -t${params.cpus} ${hifi_fasta}
 
@@ -113,8 +109,6 @@ process dipcall_variants {
 
   script:
   """
-  module load samtools
-
   samtools faidx ${ref}
 
   ~/dipcall.kit/run-dipcall ${sample} ${ref} ${asm}/${sample}_hap1.fa.gz ${asm}/${sample}_hap2.fa.gz > ${sample}.mak
@@ -136,17 +130,13 @@ process svim_asm_variants {
 
   script:
   """
-  module load samtools
-  module load bcftools
-  module load python/3.9.6
-
   parallel -j3 'samtools faidx {}' ::: ${ref} ${hap1} ${hap2}
 
   mkdir ${sample}
   minimap2 -a -x asm5 --cs -r2k -t ${params.cpus} ${ref} ${hap1} | samtools sort -m4G -@4 -o hap1.sorted.bam -
-    minimap2 -a -x asm5 --cs -r2k -t ${params.cpus} ${ref} ${hap2} | samtools sort -m4G -@4 -o hap2.sorted.bam -
+  minimap2 -a -x asm5 --cs -r2k -t ${params.cpus} ${ref} ${hap2} | samtools sort -m4G -@4 -o hap2.sorted.bam -
 
-    parallel -j2 'samtools index {}' ::: hap1.sorted.bam hap2.sorted.bam
+  parallel -j2 'samtools index {}' ::: hap1.sorted.bam hap2.sorted.bam
 
   mkdir snvs
   (seq 1 22; echo X) | parallel -j24 'python3 ${projectDir}/parse_snvs.py --min_quality ${params.cpus} --reference ${ref} --hap1 hap1.sorted.bam --hap2 hap2.sorted.bam --region chr{} --vcf_out snvs/chr{}.vcf.gz --vcf_template ${projectDir}/header.vcf.gz --sample ${sample}'
