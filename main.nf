@@ -144,9 +144,9 @@ process svim_asm_variants {
 
   mkdir ${sample}
   minimap2 -a -x asm5 --cs -r2k -t ${params.cpus} ${ref} ${hap1} | samtools sort -m4G -@4 -o hap1.sorted.bam -
-  minimap2 -a -x asm5 --cs -r2k -t ${params.cpus} ${ref} ${hap2} | samtools sort -m4G -@4 -o hap2.sorted.bam -
+    minimap2 -a -x asm5 --cs -r2k -t ${params.cpus} ${ref} ${hap2} | samtools sort -m4G -@4 -o hap2.sorted.bam -
 
-  parallel -j2 'samtools index {}' ::: hap1.sorted.bam hap2.sorted.bam
+    parallel -j2 'samtools index {}' ::: hap1.sorted.bam hap2.sorted.bam
 
   mkdir snvs
   (seq 1 22; echo X) | parallel -j24 'python3 ${projectDir}/parse_snvs.py --min_quality ${params.cpus} --reference ${ref} --hap1 hap1.sorted.bam --hap2 hap2.sorted.bam --region chr{} --vcf_out snvs/chr{}.vcf.gz --vcf_template ${projectDir}/header.vcf.gz --sample ${sample}'
@@ -158,54 +158,56 @@ process svim_asm_variants {
   """
 }
 
-if(!params.assemblies) {
-  if(params.trio && params.hifi_parents) {
-    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
-      row ->
-      mat: [row.sample, "maternal", file(row.maternal)]
-      pat: [row.sample, "paternal", file(row.paternal)]
-      hifi: [row.sample, file(row.hifi)]
-    }
-  } else if(params.trio && !params.hifi_parents) {
-    design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
-      row ->
-      mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
-      pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
-      hifi: [row.sample, file(row.hifi)]
-    }
-    else if(!params.trio) {
-      design = Channel.fromPath(params.design).splitCsv(header : true).map {
-        row -> [row.sample, file(row.hifi)]
+workflow {
+  if(!params.assemblies) {
+    if(params.trio && params.hifi_parents) {
+      design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+        row ->
+        mat: [row.sample, "maternal", file(row.maternal)]
+        pat: [row.sample, "paternal", file(row.paternal)]
+        hifi: [row.sample, file(row.hifi)]
       }
-  }
+    } else if(params.trio && !params.hifi_parents) {
+      design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+        row ->
+        mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
+        pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
+        hifi: [row.sample, file(row.hifi)]
+      }
+    } else if(!params.trio) {
+        design = Channel.fromPath(params.design).splitCsv(header : true).map {
+          row -> [row.sample, file(row.hifi)]
+        }
+      }
 
-  if(params.trio) {
-    yac_fastq_ch = design.mat.concat(design.pat)
+      if(params.trio) {
+        yac_fastq_ch = design.mat.concat(design.pat)
 
-    yac_kmers_ch = channel.empty()
-    if(params.hifi_parents) {
-      yac_kmers_ch = yak_kmers_single(yac_fastq_ch)
-    } else {
-      yac_kmers_ch = yak_kmers_paired(yac_fastq_ch)
+        yac_kmers_ch = channel.empty()
+        if(params.hifi_parents) {
+          yac_kmers_ch = yak_kmers_single(yac_fastq_ch)
+        } else {
+          yac_kmers_ch = yak_kmers_paired(yac_fastq_ch)
+        }
+
+        hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
+          it -> [it[0], it[1][0], it[1][1]]}, by: 0).view()
+
+        hifiasm_denovo_ch = hifiasm_trio_denovo(hifiasm_ch)
+      } else if(!params.trio) {
+        hifiasm_denovo_ch = hifiasm_hifi_denovo(design)
+      }
+    } else if(params.assemblies){
+      hifiasm_denovo_ch = Channel.fromPath(params.assemblies).splitCsv(header : true).map {
+        row -> [row.sample, file(row.hap1), file(row.hap2)]
+      }
     }
 
-    hifiasm_ch = design.hifi.join(yac_kmers_ch.groupTuple(by: 0).map{
-      it -> [it[0], it[1][0], it[1][1]]}, by: 0).view()
-
-    hifiasm_denovo_ch = hifiasm_trio_denovo(hifiasm_ch)
-  } else if(!params.trio) {
-      hifiasm_denovo_ch = hifiasm_hifi_denovo(design)
-  }
-} else if(params.assemblies){
-  hifiasm_denovo_ch = Channel.fromPath(params.assemblies).splitCsv(header : true).map {
-    row -> [row.sample, file(row.hap1), file(row.hap2)]
-  }
-}
-
-if(params.dipcall) {
-  ref_ch = Channel.fromPath(params.ref)
-  dipcall_variants(hifiasm_denovo_ch.combine(ref_ch))
-} else if(params.svim_asm){
-  ref_ch = Channel.fromPath(params.ref)
-  svim_asm_variants(hifiasm_denovo_ch.combine(ref_ch))
+    if(params.dipcall) {
+      ref_ch = Channel.fromPath(params.ref)
+      dipcall_variants(hifiasm_denovo_ch.combine(ref_ch))
+    } else if(params.svim_asm) {
+      ref_ch = Channel.fromPath(params.ref)
+      svim_asm_variants(hifiasm_denovo_ch.combine(ref_ch))
+    }
 }
