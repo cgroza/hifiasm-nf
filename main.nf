@@ -151,21 +151,21 @@ process svim_asm_variants {
 workflow {
   if(!params.assemblies) {
     if(params.trio && params.hifi_parents) {
-      design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+      design = channel.fromPath(params.design).splitCsv(header : true).multiMap {
         row ->
         mat: [row.sample, "maternal", file(row.maternal)]
         pat: [row.sample, "paternal", file(row.paternal)]
         hifi: [row.sample, file(row.hifi)]
       }
     } else if(params.trio && !params.hifi_parents) {
-      design = Channel.fromPath(params.design).splitCsv(header : true).multiMap {
+      design = channel.fromPath(params.design).splitCsv(header : true).multiMap {
         row ->
         mat: [row.sample, "maternal", file(row.maternal_1), file(row.maternal_2)]
         pat: [row.sample, "paternal", file(row.paternal_1), file(row.paternal_2)]
         hifi: [row.sample, file(row.hifi)]
       }
     } else if(!params.trio) {
-        design = Channel.fromPath(params.design).splitCsv(header : true).map {
+        design = channel.fromPath(params.design).splitCsv(header : true).map {
           row -> [row.sample, file(row.hifi)]
         }
       }
@@ -188,16 +188,16 @@ workflow {
         hifiasm_denovo_ch = hifiasm_hifi_denovo(design)
       }
     } else if(params.assemblies){
-      hifiasm_denovo_ch = Channel.fromPath(params.assemblies).splitCsv(header : true).map {
+      hifiasm_denovo_ch = channel.fromPath(params.assemblies).splitCsv(header : true).map {
         row -> [row.sample, file(row.hap1), file(row.hap2)]
       }
     }
 
     if(params.dipcall) {
-      ref_ch = Channel.fromPath(params.ref)
+      ref_ch = channel.fromPath(params.ref)
       dipcall_variants(hifiasm_denovo_ch.combine(ref_ch))
     } else if(params.svim_asm) {
-      ref_ch = Channel.fromPath(params.ref)
+      ref_ch = channel.fromPath(params.ref)
       svim_asm_variants(hifiasm_denovo_ch.combine(ref_ch))
     }
 }
