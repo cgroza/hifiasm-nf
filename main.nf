@@ -48,7 +48,7 @@ process hifiasm_trio_denovo {
   memory params.memory
   time '24h'
 
-  publishDir 'assemblies'
+  publishDir 'assemblies', mode: 'copy'
 
   input:
   tuple val(sample), path(hifi_fasta), path(yak1), path(yak2)
@@ -74,7 +74,7 @@ process hifiasm_hifi_denovo {
   memory params.memory
   time '24h'
 
-  publishDir 'assemblies'
+  publishDir 'assemblies', mode: 'copy'
 
   input:
   tuple val(sample), path(hifi_fasta)
@@ -99,7 +99,7 @@ process dipcall_variants {
   cpus params.cpus
   memory params.memory
   time '24h'
-  publishDir 'variants'
+  publishDir 'variants', mode: 'copy'
 
   input:
   tuple val(sample), path(hap1), path(hap2), path(ref)
@@ -120,7 +120,7 @@ process svim_asm_variants {
   cpus params.cpus
   memory params.memory
   time '24h'
-  publishDir 'variants'
+  publishDir 'variants', mode: 'copy'
 
   input:
   tuple val(sample), path(hap1), path(hap2), path(ref) from hifiasm_denovo_ch.combine(ref_ch)
