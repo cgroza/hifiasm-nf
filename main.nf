@@ -59,7 +59,7 @@ process hifiasm_trio_denovo {
   script:
   """
   mkdir ${sample}_asm
-  hifiasm -o ${sample}_asm/${sample}.asm -t${params.cpus} -1 ${yak1} -2 ${yak2} ${hifi_fasta}
+  hifiasm -o ${sample}_asm/${sample}.asm -t${params.cpus} -1 ${yak1} -2 ${yak2} --dual-scaf ${hifi_fasta}
 
   mkdir ${sample}_diploid
   awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.dip.hap1.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap1.fa.gz
@@ -85,7 +85,7 @@ process hifiasm_hifi_denovo {
   script:
   """
   mkdir ${sample}_asm
-  hifiasm -o ${sample}_asm/${sample}.asm -t${params.cpus} ${hifi_fasta}
+  hifiasm -o ${sample}_asm/${sample}.asm -t${params.cpus} --dual-scaf ${hifi_fasta}
 
   mkdir ${sample}_diploid
   awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.bp.hap1.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap1.fa.gz
