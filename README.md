@@ -318,8 +318,13 @@ nextflow run ... -resume
 With Nextflow, Python 3, samtools, and bgzip on `PATH`, run:
 
 ```bash
-python3 -m unittest discover -s tests -v
+NXF_SYNTAX_PARSER=v1 python3 -m unittest discover -s tests -v
+NXF_SYNTAX_PARSER=v2 python3 -m unittest discover -s tests -v
 ```
+
+Run both commands to check compatibility with the legacy and strict parsers
+(the strict parser requires Nextflow 25.04 or later). Tests default to the
+strict parser when `NXF_SYNTAX_PARSER` is unset.
 
 The integration tests use real BAM-to-FASTQ conversion and compression, mock
 hifiasm and yak to check commands and family routing without a large assembly,

@@ -80,6 +80,7 @@ class WorkflowTests(unittest.TestCase):
         command += list(arguments)
         env = {**os.environ, "PATH": str(self.tools) + os.pathsep + os.environ["PATH"]}
         env["NXF_OFFLINE"] = "true"
+        env.setdefault("NXF_SYNTAX_PARSER", "v2")
         result = subprocess.run(command, cwd=run_dir, env=env, capture_output=True, text=True, timeout=180)
         output = result.stdout + result.stderr
         if success:

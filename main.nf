@@ -7,46 +7,6 @@ params.cpus = 40
 params.memory = '160G'
 
 
-def validateDesign(rows) {
-  if (!rows) {
-    error 'The design CSV must contain at least one sample.'
-  }
-  def required = ['BAM', 'sample_id', 'sample_family', 'role']
-  def samples = rows.collect { row ->
-    required.each { column ->
-      if (!row[column]?.trim()) {
-        error "Each design row requires a non-empty '${column}' column."
-      }
-    }
-    def sample = row.sample_id.trim()
-    def family = row.sample_family.trim()
-    def role = row.role.trim()
-    [sample, family].each { name ->
-      if (!(name ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/)) {
-        error "Invalid sample or family identifier '${name}': use letters, numbers, periods, underscores, and hyphens, starting with a letter or number."
-      }
-    }
-    if (!(role in ['mat', 'pat', 'proband'])) {
-      error "Invalid role '${role}' for '${sample}': expected mat, pat, or proband."
-    }
-    [sample, family, role, file(row.BAM.trim(), checkIfExists: true)]
-  }
-  samples.groupBy { it[0] }.each { sample, members ->
-    if (members.size() != 1) {
-      error "Duplicate sample_id '${sample}': provide one BAM per sample."
-    }
-  }
-  samples.groupBy { it[1] }.each { family, members ->
-    ['mat', 'pat'].each { role ->
-      def count = members.count { it[2] == role }
-      if (count > 1 || (members.any { it[2] == 'proband' } && count != 1)) {
-        error "Family '${family}' requires exactly one '${role}' parent when a proband is present, and cannot contain duplicate parents."
-      }
-    }
-  }
-  return samples
-}
-
 process bam_to_fastq {
   cpus params.cpus
   memory params.memory
@@ -229,7 +189,45 @@ workflow {
     design = channel.fromPath(params.design, checkIfExists: true)
       .splitCsv(header: true)
       .toList()
-      .flatMap { rows -> this.validateDesign(rows) }
+      .flatMap { rows ->
+        if (!rows) {
+          error 'The design CSV must contain at least one sample.'
+        }
+        def required = ['BAM', 'sample_id', 'sample_family', 'role']
+        def samples = rows.collect { row ->
+          required.each { column ->
+            if (!row[column]?.trim()) {
+              error "Each design row requires a non-empty '${column}' column."
+            }
+          }
+          def sample = row.sample_id.trim()
+          def family = row.sample_family.trim()
+          def role = row.role.trim()
+          [sample, family].each { name ->
+            if (!(name ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/)) {
+              error "Invalid sample or family identifier '${name}': use letters, numbers, periods, underscores, and hyphens, starting with a letter or number."
+            }
+          }
+          if (!(role in ['mat', 'pat', 'proband'])) {
+            error "Invalid role '${role}' for '${sample}': expected mat, pat, or proband."
+          }
+          [sample, family, role, file(row.BAM.trim(), checkIfExists: true)]
+        }
+        samples.groupBy { it[0] }.each { sample, members ->
+          if (members.size() != 1) {
+            error "Duplicate sample_id '${sample}': provide one BAM per sample."
+          }
+        }
+        samples.groupBy { it[1] }.each { family, members ->
+          ['mat', 'pat'].each { role ->
+            def count = members.count { it[2] == role }
+            if (count > 1 || (members.any { it[2] == 'proband' } && count != 1)) {
+              error "Family '${family}' requires exactly one '${role}' parent when a proband is present, and cannot contain duplicate parents."
+            }
+          }
+        }
+        return samples
+      }
 
     reads = bam_to_fastq(design).branch {
       parents: it[2] in ['mat', 'pat']
