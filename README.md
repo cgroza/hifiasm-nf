@@ -7,7 +7,8 @@ family. Existing haplotype assemblies can also be supplied for the optional
 variant-calling steps.
 
 The instructions below target the Alliance of BiCompute Canada **Rorqual**
-cluster and its Slurm scheduler.
+cluster and its Slurm scheduler. For Azure CycleCloud-managed Slurm clusters,
+see [CycleCloud Slurm](#cyclecloud-slurm).
 
 ## Requirements
 
@@ -187,6 +188,67 @@ sq
 Do not submit `run-hifiasm.sh` with `sbatch`: that would place the Nextflow
 controller on a compute node. The `tmux` session must remain running until all
 pipeline jobs finish.
+
+## CycleCloud Slurm
+
+Use `-profile cyclecloud` on an Azure CycleCloud-managed Slurm cluster. This
+profile submits tasks to Slurm, runs them with Apptainer using
+`cgroza/nf-hifiasm:latest`, and enables node-local scratch. Unlike the Rorqual
+profile, it does not require `$SLURM_TMPDIR`: Nextflow uses the task's `$TMPDIR`
+when set, or creates a temporary directory under `/tmp` otherwise. Ensure that
+this filesystem has enough space for BAM conversion and assembly; configure
+`process.scratch` to a larger node-local path in the site configuration if
+necessary.
+
+Install Nextflow and Java on the submit/login node, and Apptainer on that node
+and all compute nodes. Slurm commands such as `sbatch`, `squeue`, and `scancel`
+must be available to the controller. Use **x86_64 compute nodes** because the
+published container includes amd64 dipcall binaries. Keep the repository,
+design CSV, BAMs, reference, launch directory, container image, and Nextflow
+work directory on storage mounted at the same paths on all nodes.
+
+Create `cyclecloud.config` for your cluster's partition and, if required,
+account. Replace the example values with those configured in Slurm:
+
+```groovy
+process {
+    queue = 'your-partition'
+    // Add only if your cluster requires a Slurm account:
+    // clusterOptions = '--account=your-account'
+}
+```
+
+The profile otherwise uses Slurm's default partition and account. Select a
+partition whose CycleCloud node configuration provides the requested CPUs,
+memory, and local disk. Each process requests 40 CPUs and 160 GB by default.
+
+Before launching, build a SIF from the published Docker image on a node with
+internet access, placing it on shared storage. The following uses `/shared`
+as an example mount; replace it with your cluster's actual shared filesystem:
+
+```bash
+mkdir -p /shared/hifiasm/containers /shared/hifiasm/run /shared/hifiasm/work
+apptainer build /shared/hifiasm/containers/nf-hifiasm.sif \
+    docker://cgroza/nf-hifiasm:latest
+
+cd /shared/hifiasm/run
+tmux new -s hifiasm
+nextflow run /shared/hifiasm/pipeline/main.nf \
+    -profile cyclecloud \
+    -c /shared/hifiasm/pipeline/cyclecloud.config \
+    -with-apptainer /shared/hifiasm/containers/nf-hifiasm.sif \
+    -work-dir /shared/hifiasm/work \
+    --design /shared/hifiasm/run/design.csv \
+    --cpus 40 \
+    --memory 160G
+```
+
+Run the controller on the submit/login node inside `tmux`, not in an `sbatch`
+job. The local SIF override avoids downloads on compute nodes. If you omit
+`-with-apptainer`, the profile uses the Docker image URI; set
+`NXF_APPTAINER_CACHEDIR` to a shared directory and ensure the controller can
+download the image before tasks start. Use `squeue` to monitor jobs and
+`-resume` from the same launch and work directories to resume a run.
 
 ## Run modes
 
