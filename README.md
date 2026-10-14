@@ -1,9 +1,10 @@
 # hifiasm Nextflow pipeline on Rorqual
 
-This pipeline assembles PacBio HiFi reads with hifiasm. It can run either an
-unphased HiFi assembly or a trio assembly using parental reads and yak. Existing
-haplotype assemblies can also be supplied for the optional variant-calling
-steps.
+The `hifi-trios` branch assembles PacBio HiFi BAMs with hifiasm. It converts each
+BAM to FASTQ, assembles maternal and paternal samples independently, and
+assembles probands in trio-binning mode using parental yak k-mers from the same
+family. Existing haplotype assemblies can also be supplied for the optional
+variant-calling steps.
 
 The instructions below target the Alliance of BiCompute Canada **Rorqual**
 cluster and its Slurm scheduler.
@@ -45,34 +46,63 @@ mkdir -p containers
 Building off-cluster is recommended because the definition downloads and
 compiles software, while Rorqual compute nodes cannot access the internet.
 
+### Docker alternative
+
+The [`Dockerfile`](Dockerfile) builds a task image containing hifiasm, yak,
+samtools, minimap2, bcftools, bgzip, GNU Parallel, SVIM-asm, the SNV parsing
+script and its Python dependencies, and the complete dipcall toolkit. Build
+from the repository root:
+
+```bash
+docker build --platform linux/amd64 -t hifiasm-nextflow:local .
+```
+
+The amd64 platform is required by the official dipcall release binaries;
+Docker on Apple Silicon must use amd64 emulation. The image does not include
+the Nextflow controller. On a machine with Docker and Nextflow installed, run
+the pipeline with Apptainer explicitly disabled:
+
+```bash
+printf 'apptainer.enabled = false\n' > docker.config
+nextflow run main.nf -profile standard \
+    -c docker.config \
+    -with-docker hifiasm-nextflow:local \
+    --design /absolute/path/design.csv
+```
+
+Docker is not used on Rorqual compute nodes; use the Apptainer instructions
+above for cluster execution.
+
 ## 2. Prepare a design CSV
 
 Use absolute paths so that Nextflow can stage every input reliably.
 
-### HiFi assembly
+### HiFi families
 
 ```csv
-sample,hifi
-sample1,/project/def-pi/data/sample1.hifi.fastq.gz
-sample2,/project/def-pi/data/sample2.hifi.fastq.gz
+BAM,sample_id,sample_family,role
+/project/def-pi/data/mother.hifi.bam,mother,family1,mat
+/project/def-pi/data/father.hifi.bam,father,family1,pat
+/project/def-pi/data/child.hifi.bam,child,family1,proband
+/project/def-pi/data/sibling.hifi.bam,sibling,family1,proband
 ```
 
-### Trio assembly with paired-end parental reads
+Provide one HiFi BAM per sample. `sample_id` must be globally unique.
+`sample_family` connects each proband to its parents, and `role` must be `mat`,
+`pat`, or `proband`. Every family containing a proband must have exactly one
+`mat` and one `pat`. Multiple probands can share the same parents; their parental
+k-mer databases are computed once and reused. Parents are always assembled
+independently, even in families without a proband. Duplicate parent roles,
+missing parents, invalid roles, missing BAMs, and duplicate sample IDs fail
+validation before tasks are launched.
 
-```csv
-sample,hifi,maternal_1,maternal_2,paternal_1,paternal_2
-sample1,/project/def-pi/data/sample1.hifi.fastq.gz,/project/def-pi/data/mother_R1.fastq.gz,/project/def-pi/data/mother_R2.fastq.gz,/project/def-pi/data/father_R1.fastq.gz,/project/def-pi/data/father_R2.fastq.gz
-```
+Sample and family identifiers must start with a letter or number and contain
+only letters, numbers, periods, underscores, and hyphens. Output directory and
+file names use `sample_id`, not `sample_family`. In trio assemblies, haplotype
+1 is paternal (`hifiasm -1`) and haplotype 2 is maternal (`hifiasm -2`).
 
-### Trio assembly with HiFi parental reads
-
-```csv
-sample,hifi,maternal,paternal
-sample1,/project/def-pi/data/sample1.hifi.fastq.gz,/project/def-pi/data/mother.hifi.fastq.gz,/project/def-pi/data/father.hifi.fastq.gz
-```
-
-Sample names become directory and file-name components. Keep them unique and
-use only letters, numbers, periods, underscores, and hyphens.
+This branch replaces the previous FASTQ design formats and the `--trio` and
+`--hifi_parents` switches. Roles in the CSV now select the assembly mode.
 
 ## 3. Add Rorqual scheduler settings
 
@@ -162,22 +192,10 @@ pipeline jobs finish.
 
 Change the final `nextflow run` arguments in the launcher for the desired mode.
 
-**HiFi assembly:**
+**Assemble parents and trio-bin probands from HiFi BAMs:**
 
 ```text
 --design /absolute/path/design.csv
-```
-
-**Trio assembly with paired-end parental reads:**
-
-```text
---design /absolute/path/design.csv --trio true
-```
-
-**Trio assembly with HiFi parental reads:**
-
-```text
---design /absolute/path/design.csv --trio true --hifi_parents true
 ```
 
 **Use existing haplotype assemblies instead of assembling reads:**
@@ -214,7 +232,8 @@ contigs `chr1` through `chr22` and `chrX`.
 
 Outputs are published relative to the launch directory:
 
-- `assemblies/`: bgzip-compressed haplotype FASTA files
+- `assemblies/<sample_id>_diploid/<sample_id>_hap{1,2}.fa.gz`:
+  bgzip-compressed haplotype FASTA files for every parent and proband
 - `variants/`: compressed variant calls when a variant mode is enabled
 - `.nextflow.log`: controller log
 - `hifiasm-nextflow.log`: controller console log
@@ -231,6 +250,21 @@ If the controller or a task fails, fix the cause and run the same command with
 ```text
 nextflow run ... -resume
 ```
+
+## Testing
+
+With Nextflow, Python 3, samtools, and bgzip on `PATH`, run:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+The integration tests use real BAM-to-FASTQ conversion and compression, mock
+hifiasm and yak to check commands and family routing without a large assembly,
+and use Nextflow stubs to check optional variant-calling outputs. They cover
+multiple families, siblings, parent-only inputs, invalid designs, corrupt BAMs,
+and existing assemblies. Set `NEXTFLOW` to an executable path if it is not on
+`PATH`.
 
 Keep the same launch directory and `-work-dir`; both the `.nextflow` cache and
 work files are needed to reuse completed tasks. Do not delete the work
