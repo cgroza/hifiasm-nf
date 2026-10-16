@@ -56,8 +56,6 @@ process hifiasm_trio_denovo {
   memory params.memory
   time '24h'
 
-  publishDir 'assemblies', mode: 'copy'
-
   input:
   tuple val(sample), path(hifi_fasta), path(pat_yak), path(mat_yak)
 
@@ -88,8 +86,6 @@ process hifiasm_hifi_denovo {
   memory params.memory
   time '24h'
 
-  publishDir 'assemblies', mode: 'copy'
-
   input:
   tuple val(sample), path(hifi_fasta)
 
@@ -106,6 +102,33 @@ process hifiasm_hifi_denovo {
   awk '/^S/{print ">"\$2;print \$3}' ${sample}_asm/${sample}.asm.bp.hap2.p_ctg.gfa | bgzip > ${sample}_diploid/${sample}_hap2.fa.gz
 
   rm -r ${sample}_asm
+  """
+
+  stub:
+  """
+  mkdir ${sample}_diploid
+  touch ${sample}_diploid/${sample}_hap1.fa.gz ${sample}_diploid/${sample}_hap2.fa.gz
+  """
+}
+
+process rename_contigs_pansn {
+  cpus 1
+  memory '1G'
+  time '2h'
+
+  publishDir 'assemblies', mode: 'copy'
+
+  input:
+  tuple val(sample), path(hap1), path(hap2)
+
+  output:
+  tuple val(sample), path("${sample}_diploid/${sample}_hap1.fa.gz"), path("${sample}_diploid/${sample}_hap2.fa.gz")
+
+  script:
+  """
+  mkdir ${sample}_diploid
+  gzip -cdf ${hap1} | awk -v prefix='${sample}#1#' '/^>/ { if (index(\$1, "#")) { print "Contig identifiers must not contain # before PanSN renaming" > "/dev/stderr"; exit 1 } sub(/^>/, ">" prefix) } { print }' | bgzip > ${sample}_diploid/${sample}_hap1.fa.gz
+  gzip -cdf ${hap2} | awk -v prefix='${sample}#2#' '/^>/ { if (index(\$1, "#")) { print "Contig identifiers must not contain # before PanSN renaming" > "/dev/stderr"; exit 1 } sub(/^>/, ">" prefix) } { print }' | bgzip > ${sample}_diploid/${sample}_hap2.fa.gz
   """
 
   stub:
@@ -253,15 +276,21 @@ workflow {
     hifiasm_denovo_ch = parent_assemblies.mix(proband_assemblies)
   } else {
     hifiasm_denovo_ch = channel.fromPath(params.assemblies, checkIfExists: true).splitCsv(header: true).map {
-      row -> [row.sample, file(row.hap1, checkIfExists: true), file(row.hap2, checkIfExists: true)]
+      row ->
+      if (!(row.sample ==~ /[A-Za-z0-9][A-Za-z0-9_.-]*/)) {
+        error "Invalid assembly sample identifier '${row.sample}': use letters, numbers, periods, underscores, and hyphens, starting with a letter or number."
+      }
+      [row.sample, file(row.hap1, checkIfExists: true), file(row.hap2, checkIfExists: true)]
     }
   }
 
+  pansn_assemblies = rename_contigs_pansn(hifiasm_denovo_ch)
+
   if(params.dipcall) {
     ref_ch = channel.fromPath(params.ref, checkIfExists: true)
-    dipcall_variants(hifiasm_denovo_ch.combine(ref_ch))
+    dipcall_variants(pansn_assemblies.combine(ref_ch))
   } else if(params.svim_asm) {
     ref_ch = channel.fromPath(params.ref, checkIfExists: true)
-    svim_asm_variants(hifiasm_denovo_ch.combine(ref_ch))
+    svim_asm_variants(pansn_assemblies.combine(ref_ch))
   }
 }

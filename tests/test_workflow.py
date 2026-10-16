@@ -52,7 +52,7 @@ class WorkflowTests(unittest.TestCase):
             executable.write_text(MOCK_TOOL)
             executable.chmod(0o755)
         self.config = self.directory / "test.config"
-        self.config.write_text("apptainer.enabled = false\n")
+        self.config.write_text("apptainer.enabled = false\ndocker.enabled = false\n")
         self.bam = self.directory / "input reads.bam"
         subprocess.run(
             ["samtools", "view", "-b", "-o", str(self.bam), "-"],
@@ -112,7 +112,7 @@ class WorkflowTests(unittest.TestCase):
             for hap in [1, 2]:
                 path = run_dir / "assemblies" / f"{sample}_diploid" / f"{sample}_hap{hap}.fa.gz"
                 with gzip.open(path, "rt") as handle:
-                    self.assertEqual(handle.read(), ">contig\nACGT\n")
+                    self.assertEqual(handle.read(), f">{sample}#{hap}#contig\nACGT\n")
         calls = []
         for log in (run_dir / "work").glob("*/*/.command.log"):
             calls.extend(json.loads(line) for line in log.read_text().splitlines() if line.startswith('{"tool":'))
@@ -141,6 +141,36 @@ class WorkflowTests(unittest.TestCase):
     def test_parent_only(self):
         run_dir, _ = self.run_workflow(self.rows([("mother", "family1", "mat")]))
         self.assertEqual(len(list((run_dir / "assemblies").glob("*/*.fa.gz"))), 2)
+
+    def test_pansn_existing_assemblies(self):
+        hap1 = self.directory / "hap1.fa"
+        hap2 = self.directory / "hap2.fa.gz"
+        sequence = ">contig1 description\nACGT\nTGCA\n>contig2\nNNAA\n"
+        hap1.write_text(sequence)
+        with gzip.open(hap2, "wt") as handle:
+            handle.write(sequence)
+        assemblies = self.directory / "assemblies.csv"
+        with assemblies.open("w", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["sample", "hap1", "hap2"])
+            writer.writerow(["existing", hap1, hap2])
+        run_dir, _ = self.run_workflow(arguments=["--assemblies", str(assemblies)])
+        for hap in [1, 2]:
+            output = run_dir / "assemblies" / "existing_diploid" / f"existing_hap{hap}.fa.gz"
+            with gzip.open(output, "rt") as handle:
+                self.assertEqual(
+                    handle.read(),
+                    f">existing#{hap}#contig1 description\nACGT\nTGCA\n>existing#{hap}#contig2\nNNAA\n",
+                )
+        self.assertEqual(hap1.read_text(), sequence)
+        with gzip.open(hap2, "rt") as handle:
+            self.assertEqual(handle.read(), sequence)
+        hap1.write_text(">already#1#contig\nACGT\n")
+        run_dir, output = self.run_workflow(
+            arguments=["--assemblies", str(assemblies)], success=False, before_tasks=False,
+        )
+        self.assertIn("Contig identifiers must not contain #", output)
+        self.assertFalse(list((run_dir / "assemblies").glob("*/*.fa.gz")))
 
     def test_invalid_bam_conversion_fails(self):
         bad_bam = self.directory / "invalid.bam"

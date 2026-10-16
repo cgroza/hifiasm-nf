@@ -112,6 +112,11 @@ account shown under **My Projects > My Resources and Allocations** in the
 Alliance account portal.
 
 ```groovy
+docker.enabled = false
+apptainer.enabled = true
+apptainer.autoMounts = true
+apptainer.runOptions = '--contain --bind $(pwd):/tmp'
+
 process {
     clusterOptions = '--account=def-pi'
 }
@@ -192,19 +197,19 @@ pipeline jobs finish.
 ## CycleCloud Slurm
 
 Use `-profile cyclecloud` on an Azure CycleCloud-managed Slurm cluster. This
-profile submits tasks to Slurm, runs them with Apptainer using
-`cgroza/nf-hifiasm:latest`, and enables node-local scratch. Unlike the Rorqual
-profile, it does not require `$SLURM_TMPDIR`: Nextflow uses the task's `$TMPDIR`
-when set, or creates a temporary directory under `/tmp` otherwise. Ensure that
+profile submits tasks to Slurm, runs them with Docker using
+`cgroza/nf-hifiasm:latest`, and uses `/scratch` for node-local scratch.
+Ensure that
 this filesystem has enough space for BAM conversion and assembly; configure
 `process.scratch` to a larger node-local path in the site configuration if
 necessary.
 
-Install Nextflow and Java on the submit/login node, and Apptainer on that node
-and all compute nodes. Slurm commands such as `sbatch`, `squeue`, and `scancel`
+Install Nextflow and Java on the submit/login node, and Docker on all compute
+nodes. The job user must have permission to access the running Docker daemon.
+Slurm commands such as `sbatch`, `squeue`, and `scancel`
 must be available to the controller. Use **x86_64 compute nodes** because the
 published container includes amd64 dipcall binaries. Keep the repository,
-design CSV, BAMs, reference, launch directory, container image, and Nextflow
+design CSV, BAMs, reference, launch directory, and Nextflow
 work directory on storage mounted at the same paths on all nodes.
 
 Create `cyclecloud.config` for your cluster's partition and, if required,
@@ -222,21 +227,18 @@ The profile otherwise uses Slurm's default partition and account. Select a
 partition whose CycleCloud node configuration provides the requested CPUs,
 memory, and local disk. Each process requests 40 CPUs and 160 GB by default.
 
-Before launching, build a SIF from the published Docker image on a node with
-internet access, placing it on shared storage. The following uses `/shared`
+Compute nodes must be able to pull the image from Docker Hub, or have it
+preloaded with `docker load` before launching. The following uses `/shared`
 as an example mount; replace it with your cluster's actual shared filesystem:
 
 ```bash
-mkdir -p /shared/hifiasm/containers /shared/hifiasm/run /shared/hifiasm/work
-apptainer build /shared/hifiasm/containers/nf-hifiasm.sif \
-    docker://cgroza/nf-hifiasm:latest
+mkdir -p /shared/hifiasm/run /shared/hifiasm/work
 
 cd /shared/hifiasm/run
 tmux new -s hifiasm
 nextflow run /shared/hifiasm/pipeline/main.nf \
     -profile cyclecloud \
     -c /shared/hifiasm/pipeline/cyclecloud.config \
-    -with-apptainer /shared/hifiasm/containers/nf-hifiasm.sif \
     -work-dir /shared/hifiasm/work \
     --design /shared/hifiasm/run/design.csv \
     --cpus 40 \
@@ -244,10 +246,8 @@ nextflow run /shared/hifiasm/pipeline/main.nf \
 ```
 
 Run the controller on the submit/login node inside `tmux`, not in an `sbatch`
-job. The local SIF override avoids downloads on compute nodes. If you omit
-`-with-apptainer`, the profile uses the Docker image URI; set
-`NXF_APPTAINER_CACHEDIR` to a shared directory and ensure the controller can
-download the image before tasks start. Use `squeue` to monitor jobs and
+job. Remove any previous `-with-apptainer` overrides from your launcher.
+Use `squeue` to monitor jobs and
 `-resume` from the same launch and work directories to resume a run.
 
 ## Run modes
@@ -300,6 +300,20 @@ Outputs are published relative to the launch directory:
 - `.nextflow.log`: controller log
 - `hifiasm-nextflow.log`: controller console log
 
+The downstream `rename_contigs_pansn` process renames contigs in both haplotype
+FASTAs to the PanSN format `sample_id#haplotype#contig`. For example,
+`>h1tg000001l` becomes `>child#1#h1tg000001l` in haplotype 1 and
+`>h2tg000001l` becomes `>child#2#h2tg000001l` in haplotype 2. Sequences, contig
+order, and header descriptions are preserved; output files remain bgzip
+compressed with the same sample-based filenames. Only renamed assemblies are
+published, and optional variant calling uses these renamed FASTAs.
+
+Renaming also applies to `--assemblies` inputs, using the CSV's `sample`
+column as the sample identifier. Both plain and gzip-compressed input FASTAs
+are supported. Sample identifiers follow the same rules as `sample_id` in
+the design CSV, and input contig identifiers must not contain `#` (including
+already PanSN-named inputs). Original input files are never modified.
+
 The Nextflow cache and intermediate task data are stored under the path passed
 to `-work-dir`. Rorqual scratch storage is large but is not backed up and is
 purged, so copy or publish final results under `/project`.
@@ -330,7 +344,8 @@ The integration tests use real BAM-to-FASTQ conversion and compression, mock
 hifiasm and yak to check commands and family routing without a large assembly,
 and use Nextflow stubs to check optional variant-calling outputs. They cover
 multiple families, siblings, parent-only inputs, invalid designs, corrupt BAMs,
-and existing assemblies. Set `NEXTFLOW` to an executable path if it is not on
+existing assemblies, and PanSN renaming with sequence preservation. Set
+`NEXTFLOW` to an executable path if it is not on
 `PATH`.
 
 Keep the same launch directory and `-work-dir`; both the `.nextflow` cache and
