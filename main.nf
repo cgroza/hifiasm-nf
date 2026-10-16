@@ -1,6 +1,7 @@
 params.design = null
 params.ref = null
 params.assemblies = false
+params.assemblies_outdir = 'assemblies'
 params.dipcall = false
 params.svim_asm = false
 params.cpus = 40
@@ -116,7 +117,7 @@ process rename_contigs_pansn {
   memory '1G'
   time '2h'
 
-  publishDir 'assemblies', mode: 'copy'
+  publishDir params.assemblies_outdir, mode: 'copy'
 
   input:
   tuple val(sample), path(hap1), path(hap2)

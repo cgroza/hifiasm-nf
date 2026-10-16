@@ -300,6 +300,12 @@ Outputs are published relative to the launch directory:
 - `.nextflow.log`: controller log
 - `hifiasm-nextflow.log`: controller console log
 
+Set `--assemblies_outdir /path/to/assemblies` to change the assembly output
+directory (default: `assemblies`). Relative paths are resolved from the launch
+directory. The `<sample_id>_diploid/` subdirectories and FASTA filenames are
+unchanged. This also applies to renamed `--assemblies` inputs and does not
+change the variant output or Nextflow work directories.
+
 The downstream `rename_contigs_pansn` process renames contigs in both haplotype
 FASTAs to the PanSN format `sample_id#haplotype#contig`. For example,
 `>h1tg000001l` becomes `>child#1#h1tg000001l` in haplotype 1 and

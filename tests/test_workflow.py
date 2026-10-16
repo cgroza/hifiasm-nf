@@ -142,6 +142,22 @@ class WorkflowTests(unittest.TestCase):
         run_dir, _ = self.run_workflow(self.rows([("mother", "family1", "mat")]))
         self.assertEqual(len(list((run_dir / "assemblies").glob("*/*.fa.gz"))), 2)
 
+    def test_custom_assemblies_output_directory(self):
+        for destination in ["custom assemblies", str(self.directory / "absolute assemblies")]:
+            with self.subTest(destination=destination):
+                run_dir, _ = self.run_workflow(
+                    self.rows([("mother", "family1", "mat")]),
+                    arguments=["--assemblies_outdir", destination],
+                )
+                output_dir = Path(destination)
+                if not output_dir.is_absolute():
+                    output_dir = run_dir / output_dir
+                self.assertFalse((run_dir / "assemblies").exists())
+                for hap in [1, 2]:
+                    output = output_dir / "mother_diploid" / f"mother_hap{hap}.fa.gz"
+                    with gzip.open(output, "rt") as handle:
+                        self.assertEqual(handle.read(), f">mother#{hap}#contig\nACGT\n")
+
     def test_pansn_existing_assemblies(self):
         hap1 = self.directory / "hap1.fa"
         hap2 = self.directory / "hap2.fa.gz"
