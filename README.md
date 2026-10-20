@@ -122,7 +122,7 @@ process {
 }
 
 executor {
-    queueSize = 100
+    queueSize = 10
     submitRateLimit = '60/1min'
 }
 ```
