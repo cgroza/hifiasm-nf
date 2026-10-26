@@ -1,7 +1,10 @@
 import csv
 import gzip
+import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -10,6 +13,43 @@ SCRIPT = Path(__file__).resolve().parents[1] / "bin" / "rename_fastas_pansn.sh"
 
 
 class RenameFastasTests(unittest.TestCase):
+    def test_fastas_run_concurrently_and_worker_failure_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "good.fa").write_text(">contig\nACGT\n")
+            (root / "bad.fa").write_text("not a fasta\n")
+            design = root / "samples.csv"
+            design.write_text("sample,hap1,hap2\nsample,good.fa,bad.fa\n")
+            tools = root / "tools"
+            tools.mkdir()
+            wrapper = tools / "gzip"
+            wrapper.write_text(
+                f"#!{sys.executable}\n"
+                "import os, pathlib, sys, time\n"
+                f"root = pathlib.Path({str(root)!r})\n"
+                "if '-cdf' in sys.argv:\n"
+                "    (root / (pathlib.Path(sys.argv[-1]).name + '.started')).touch()\n"
+                "    deadline = time.monotonic() + 10\n"
+                "    while len(list(root.glob('*.started'))) < 2:\n"
+                "        if time.monotonic() > deadline:\n"
+                "            sys.exit('FASTA jobs did not start concurrently')\n"
+                "        time.sleep(0.02)\n"
+                f"os.execv({shutil.which('gzip')!r}, ['gzip', *sys.argv[1:]])\n"
+            )
+            wrapper.chmod(0o755)
+            output = root / "output"
+            result = subprocess.run(
+                ["bash", str(SCRIPT), str(design), str(output)],
+                env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Input contains no FASTA headers", result.stderr)
+            self.assertNotIn("did not start concurrently", result.stderr)
+            self.assertEqual([path.name for path in output.iterdir()], ["sample_hap1.fa.gz"])
+            with gzip.open(output / "sample_hap1.fa.gz", "rt") as handle:
+                self.assertEqual(handle.read(), ">sample#1#contig\nACGT\n")
+
     def test_plain_and_compressed_csv_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -10,7 +10,19 @@ fi
 mkdir -p "$2"
 outdir=$(cd "$2" && pwd)
 scratch=$(mktemp -d "$outdir/.pansn.XXXXXXXX")
-trap 'rm -f "$scratch/manifest" "$scratch/output.fa.gz"; rmdir "$scratch"' EXIT
+pids=()
+job_count=0
+temporary_files=("$scratch/manifest")
+cleanup() {
+    if (( job_count > 0 )); then
+        for pid in "${pids[@]}"; do
+            wait "$pid" || :
+        done
+    fi
+    rm -f "${temporary_files[@]}"
+    rmdir "$scratch"
+}
+trap cleanup EXIT
 
 # Parse quoted CSV fields without treating commas or spaces as shell separators.
 python3 - "$1" "$outdir" > "$scratch/manifest" <<'PY'
@@ -52,10 +64,10 @@ if not seen:
     sys.exit("CSV contains no samples")
 PY
 
-while IFS= read -r -d '' sample &&
-      IFS= read -r -d '' hap &&
-      IFS= read -r -d '' source; do
-    target="$outdir/${sample}_hap${hap}.fa.gz"
+rename_fasta() {
+    local sample=$1 hap=$2 source=$3
+    local target="$outdir/${sample}_hap${hap}.fa.gz"
+    local temporary="$scratch/${sample}_hap${hap}.fa.gz"
     gzip -cdf -- "$source" |
         awk -v prefix="$sample#$hap#" '
             /^>/ {
@@ -74,7 +86,25 @@ while IFS= read -r -d '' sample &&
                     exit 1
                 }
             }
-        ' | gzip -c > "$scratch/output.fa.gz"
-    mv "$scratch/output.fa.gz" "$target"
+        ' | gzip -c > "$temporary"
+    mv "$temporary" "$target"
     printf '%s\n' "$target"
+}
+
+while IFS= read -r -d '' sample &&
+      IFS= read -r -d '' hap &&
+      IFS= read -r -d '' source; do
+    temporary_files+=("$scratch/${sample}_hap${hap}.fa.gz")
+    rename_fasta "$sample" "$hap" "$source" &
+    pids+=("$!")
+    job_count=$((job_count + 1))
 done < "$scratch/manifest"
+
+status=0
+for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+        status=1
+    fi
+done
+job_count=0
+exit "$status"
